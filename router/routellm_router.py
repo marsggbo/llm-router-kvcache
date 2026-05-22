@@ -1,16 +1,16 @@
 from .base import BaseRouter, RoutingDecision
 
-# Pretrained RouteLLM model IDs on HuggingFace.
-# bert variants are 0.3B — low routing latency, recommended for serving.
-# causal_llm variants are 8B — higher accuracy but adds routing overhead.
-ROUTELLM_HF_MODELS = {
-    "bert":             "routellm/bert",
-    "bert_gpt4":        "routellm/bert_gpt4_augmented",
-    "bert_mmlu":        "routellm/bert_mmlu_augmented",
-    "mf":               "routellm/mf",
-    "mf_gpt4":          "routellm/mf_gpt4_augmented",
-    "causal_llm":       "routellm/causal_llm",
-    "causal_llm_gpt4":  "routellm/causal_llm_gpt4_augmented",
+# Maps backbone alias → (router_type_for_Controller, HuggingFace_checkpoint_path)
+# router_type is the key RouteLLM uses internally (mf | bert | causal_llm).
+# checkpoint_path is passed as kwargs to the router's __init__.
+ROUTELLM_BACKBONES: dict[str, tuple[str, str]] = {
+    "bert":             ("bert",        "routellm/bert"),
+    "bert_gpt4":        ("bert",        "routellm/bert_gpt4_augmented"),
+    "bert_mmlu":        ("bert",        "routellm/bert_mmlu_augmented"),
+    "mf":               ("mf",          "routellm/mf"),
+    "mf_gpt4":          ("mf",          "routellm/mf_gpt4_augmented"),
+    "causal_llm":       ("causal_llm",  "routellm/causal_llm"),
+    "causal_llm_gpt4":  ("causal_llm",  "routellm/causal_llm_gpt4_augmented"),
 }
 
 
@@ -57,30 +57,36 @@ class RouteLLMRouter(BaseRouter):
     def _load(self):
         if self._router is not None:
             return
+        # RouteLLM imports OpenAI client at module level (for similarity_weighted router).
+        # Set a dummy key so the import doesn't crash when OPENAI_API_KEY is unset.
+        import os
+        os.environ.setdefault("OPENAI_API_KEY", "dummy-not-used")
         try:
             from routellm.controller import Controller
         except ImportError:
             raise ImportError("Run: pip install routellm")
 
-        hf_id = ROUTELLM_HF_MODELS.get(self._backbone)
-        if hf_id is None:
+        entry = ROUTELLM_BACKBONES.get(self._backbone)
+        if entry is None:
             raise ValueError(
                 f"Unknown backbone '{self._backbone}'. "
-                f"Choose from: {list(ROUTELLM_HF_MODELS)}"
+                f"Choose from: {list(ROUTELLM_BACKBONES)}"
             )
+        router_type, checkpoint_path = entry
+        print(f"[RouteLLMRouter] loading {checkpoint_path} ({router_type}) on {self._device}")
 
-        print(f"[RouteLLMRouter] loading {hf_id} on {self._device}")
         # Controller downloads weights from HuggingFace on first call.
         # strong_model/weak_model are label references from training data —
         # they don't need to match your actual serving models.
+        # config keys must match the router_type string used by RouteLLM internally.
         controller = Controller(
-            routers=[self._backbone.split("_")[0]],   # mf | bert | causal_llm
+            routers=[router_type],
             strong_model="gpt-4-1106-preview",
             weak_model="mixtral-8x7b-instruct-v0.1",
-            config={"model": hf_id, "device": self._device},
+            config={router_type: {"checkpoint_path": checkpoint_path}},
         )
         # Each router exposes calculate_strong_win_rate(prompt) -> float [0, 1]
-        self._router = controller.routers[self._backbone.split("_")[0]]
+        self._router = controller.routers[router_type]
 
     def route(self, prompt: str, task_type: str = "unknown") -> RoutingDecision:
         self._load()

@@ -84,8 +84,8 @@ def load_mmlu(num_shots: int = 5, subjects: list = None, split: str = "test",
     requests = []
 
     for subject in all_subjects:
-        ds = load_dataset("cais/mmlu", subject, split=split, trust_remote_code=True)
-        few_shot_ds = load_dataset("cais/mmlu", subject, split="dev", trust_remote_code=True)
+        ds = load_dataset("cais/mmlu", subject, split=split)
+        few_shot_ds = load_dataset("cais/mmlu", subject, split="dev")
 
         # Build few-shot prefix (shared within subject → high KV reuse potential)
         few_shot_examples = list(few_shot_ds)[:num_shots]
@@ -171,7 +171,7 @@ def load_wildbench(split: str = "test", max_samples: int = None) -> list[Request
     except ImportError:
         raise ImportError("Run: pip install datasets")
 
-    ds = load_dataset("allenai/WildBench", split=split, trust_remote_code=True)
+    ds = load_dataset("allenai/WildBench", split=split)
     requests = []
 
     for item in ds:

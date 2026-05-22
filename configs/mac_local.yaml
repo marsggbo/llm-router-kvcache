@@ -32,7 +32,7 @@ datasets:
   mmlu:
     num_shots: 3                          # fewer shots to keep prompts shorter on local
     subjects: ["high_school_mathematics", "high_school_computer_science",
-               "moral_scenarios", "high_school_history"]
+               "moral_scenarios", "high_school_us_history"]
     split: "test"
     max_samples: 100
   sharegpt:

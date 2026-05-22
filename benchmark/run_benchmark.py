@@ -50,6 +50,8 @@ async def send_request(
         "messages": [{"role": "user", "content": req.prompt}],
         "max_tokens": max_new_tokens,
         "stream": True,
+        # Request usage stats in final streaming chunk (supported by Ollama + SGLang)
+        "stream_options": {"include_usage": True},
     }
 
     async with semaphore:
@@ -77,13 +79,13 @@ async def send_request(
                     except json.JSONDecodeError:
                         continue
 
-                    if first_token_time is None:
-                        first_token_time = time.perf_counter()
-                        metrics.ttft = first_token_time - t_start
-
-                    delta = chunk["choices"][0].get("delta", {})
-                    if delta.get("content"):
-                        completion_tokens += 1
+                    if chunk.get("choices"):
+                        if first_token_time is None:
+                            first_token_time = time.perf_counter()
+                            metrics.ttft = first_token_time - t_start
+                        delta = chunk["choices"][0].get("delta", {})
+                        if delta.get("content"):
+                            completion_tokens += 1
 
                     if usage := chunk.get("usage"):
                         metrics.prompt_tokens = usage.get("prompt_tokens", 0)

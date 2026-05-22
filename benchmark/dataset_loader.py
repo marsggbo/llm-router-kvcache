@@ -1,4 +1,16 @@
-"""Dataset loaders for MMLU, ShareGPT, and WildBench."""
+"""
+Dataset loaders.
+
+Serving benchmarks (routing + KV cache study):
+  - MMLU        : structured QA, 57 subjects, fixed few-shot prefix → high KV reuse
+  - WildBench   : diverse real-user tasks, task-type labels for routing
+  - ShareGPT    : multi-turn conversations, long prefix accumulation
+
+Router calibration / training (from RouteLLM HuggingFace org):
+  - routellm/gpt4_judge_battles   (109k)  GPT-4-judged strong/weak labels
+  - routellm/mmlu_battles         (1.53k) MMLU-specific routing labels
+  - routellm/arena_battles_embeddings (55k) Chatbot Arena human preference
+"""
 
 import json
 import random
@@ -206,5 +218,61 @@ def load_dataset_by_name(name: str, cfg: dict) -> list[Request]:
             split=dcfg.get("split", "test"),
             max_samples=dcfg.get("max_samples"),
         )
+    elif name == "routellm_gpt4":
+        return load_routellm_battles(
+            hf_dataset="routellm/gpt4_judge_battles",
+            max_samples=dcfg.get("max_samples"),
+        )
+    elif name == "routellm_mmlu":
+        return load_routellm_battles(
+            hf_dataset="routellm/mmlu_battles",
+            max_samples=dcfg.get("max_samples"),
+        )
     else:
         raise ValueError(f"Unknown dataset: {name}")
+
+
+# ---------------------------------------------------------------------------
+# RouteLLM calibration datasets
+# ---------------------------------------------------------------------------
+
+def load_routellm_battles(hf_dataset: str, max_samples: int = None) -> list[Request]:
+    """
+    Load RouteLLM's HuggingFace battle datasets for router calibration/evaluation.
+
+    Each record has a prompt and a binary label: whether the strong model won.
+    Useful for calibrating the routing threshold on your own model pair.
+
+    Datasets:
+      routellm/gpt4_judge_battles  — 109k, GPT-4 as judge
+      routellm/mmlu_battles        — 1.53k, MMLU subset
+      routellm/arena_battles_embeddings — 55k, human preference
+    """
+    try:
+        from datasets import load_dataset
+    except ImportError:
+        raise ImportError("Run: pip install datasets")
+
+    ds = load_dataset(hf_dataset, split="train", trust_remote_code=True)
+    requests = []
+    for item in ds:
+        prompt = item.get("prompt", "") or item.get("question", "")
+        if not prompt:
+            continue
+        # strong_win=1 means the strong model was judged better
+        strong_win = int(item.get("strong_win", item.get("label", 0)))
+        requests.append(Request(
+            prompt=prompt,
+            task_type="routellm_calibration",
+            expected_output=str(strong_win),
+            metadata={
+                "source": hf_dataset,
+                "strong_win": strong_win,
+            },
+        ))
+
+    if max_samples:
+        random.shuffle(requests)
+        requests = requests[:max_samples]
+
+    return requests

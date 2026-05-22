@@ -7,11 +7,18 @@ serving:
   strong_url: "http://localhost:30001"
 
 router:
-  # Options: random | always_weak | always_strong | routellm | task_aware
+  # Options: random | always_weak | always_strong | routellm
   type: "routellm"
-  routellm_model: "mf"          # RouteLLM backbone: mf | bert | causal_llm
-  threshold: 0.5                # Higher → more traffic to strong model
-  task_aware_affinity: false    # Enable task-aware instance affinity (Phase 3)
+
+  # RouteLLM pretrained backbone (weights auto-downloaded from HuggingFace):
+  #   bert_gpt4      → routellm/bert_gpt4_augmented      (0.3B, recommended)
+  #   bert_mmlu      → routellm/bert_mmlu_augmented       (0.3B, MMLU-tuned)
+  #   mf_gpt4        → routellm/mf_gpt4_augmented         (lightweight MF)
+  #   causal_llm_gpt4→ routellm/causal_llm_gpt4_augmented (8B, highest accuracy)
+  routellm_model: "bert_gpt4"
+
+  threshold: 0.5                # P(strong needed) threshold; higher → more strong-model traffic
+  task_aware_affinity: false    # Phase 3: route same-task requests to same instance
 
 benchmark:
   num_requests: 500

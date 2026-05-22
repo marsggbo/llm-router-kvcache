@@ -1,44 +1,65 @@
 from .base import BaseRouter, RoutingDecision
 
+# Pretrained RouteLLM model IDs on HuggingFace.
+# bert variants are 0.3B — low routing latency, recommended for serving.
+# causal_llm variants are 8B — higher accuracy but adds routing overhead.
+ROUTELLM_HF_MODELS = {
+    "bert":                    "routellm/bert",
+    "bert_gpt4":               "routellm/bert_gpt4_augmented",
+    "bert_mmlu":               "routellm/bert_mmlu_augmented",
+    "mf":                      "routellm/mf",
+    "mf_gpt4":                 "routellm/mf_gpt4_augmented",
+    "causal_llm":              "routellm/causal_llm",
+    "causal_llm_gpt4":         "routellm/causal_llm_gpt4_augmented",
+}
+
 
 class RouteLLMRouter(BaseRouter):
     """
-    Routes requests using RouteLLM's trained router models.
+    Routes requests using RouteLLM's pretrained router models.
 
-    Requires: pip install routellm[serve]
-    Supported backbones: mf (matrix factorization), bert, causal_llm
+    Open-source weights: https://huggingface.co/routellm
+    Companion datasets:  https://huggingface.co/datasets/routellm/gpt4_judge_battles
 
-    RouteLLM outputs a score in [0, 1] representing the probability
-    that the strong model is needed. We threshold at cfg.router.threshold.
+    Recommended backbone: bert_gpt4 (0.3B BERT, low routing latency).
+    The router predicts P(strong model needed) and thresholds at cfg.router.threshold.
+
+    Requires: pip install routellm
     """
 
     def __init__(self, cfg: dict):
         super().__init__(cfg)
-        self._controller = None
+        self._router = None
+        self._backbone = cfg["router"].get("routellm_model", "bert_gpt4")
 
     def _load(self):
-        if self._controller is not None:
+        if self._router is not None:
             return
         try:
             from routellm.controller import Controller
         except ImportError:
-            raise ImportError(
-                "RouteLLM not installed. Run: pip install routellm"
+            raise ImportError("Run: pip install routellm")
+
+        hf_id = ROUTELLM_HF_MODELS.get(self._backbone)
+        if hf_id is None:
+            raise ValueError(
+                f"Unknown backbone '{self._backbone}'. "
+                f"Choose from: {list(ROUTELLM_HF_MODELS)}"
             )
-        backbone = self.cfg["router"].get("routellm_model", "mf")
-        # RouteLLM needs a pair of model names to compute routing scores.
-        # We pass the configured model names as strong/weak references.
-        self._controller = Controller(
-            routers=[backbone],
-            strong_model=self.strong_model,
-            weak_model=self.weak_model,
+
+        # Controller downloads weights from HuggingFace on first load.
+        # strong_model / weak_model are used as label references for the
+        # router's preference data; they do not need to match your serving models.
+        controller = Controller(
+            routers=[self._backbone.split("_")[0]],   # mf | bert | causal_llm
+            strong_model="gpt-4-1106-preview",
+            weak_model="mixtral-8x7b-instruct-v0.1",
+            config={"model": hf_id},
         )
-        self._backbone = backbone
+        # Each router exposes calculate_strong_win_rate(prompt) -> float [0, 1]
+        self._router = controller.routers[self._backbone.split("_")[0]]
 
     def route(self, prompt: str, task_type: str = "unknown") -> RoutingDecision:
         self._load()
-        # route_with_thresholds returns the chosen model name;
-        # we call the underlying router to get the raw score instead.
-        router_obj = self._controller.routers[self._backbone]
-        score = router_obj.calculate_strong_win_rate(prompt)
-        return self._make_decision(score, task_type)
+        score = self._router.calculate_strong_win_rate(prompt)
+        return self._make_decision(float(score), task_type)

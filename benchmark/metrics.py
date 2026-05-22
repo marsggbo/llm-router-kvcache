@@ -8,9 +8,9 @@ import numpy as np
 @dataclass
 class RequestMetrics:
     request_id: int
-    prompt: str
+    prompt: str          # full prompt text — needed for prefix overlap analysis
     task_type: str
-    model_tier: str             # weak | strong
+    model_tier: str      # weak | strong
     model_name: str
     router_score: float
 

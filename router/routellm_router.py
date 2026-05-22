@@ -88,7 +88,8 @@ class RouteLLMRouter(BaseRouter):
         # Each router exposes calculate_strong_win_rate(prompt) -> float [0, 1]
         self._router = controller.routers[router_type]
 
-    def route(self, prompt: str, task_type: str = "unknown") -> RoutingDecision:
+    def route(self, prompt: str, task_type: str = "unknown",
+              cache_state: dict | None = None) -> RoutingDecision:
         self._load()
         score = self._router.calculate_strong_win_rate(prompt)
         return self._make_decision(float(score), task_type)

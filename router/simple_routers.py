@@ -5,7 +5,8 @@ from .base import BaseRouter, RoutingDecision
 class RandomRouter(BaseRouter):
     """Routes each request randomly to weak or strong model."""
 
-    def route(self, prompt: str, task_type: str = "unknown") -> RoutingDecision:
+    def route(self, prompt: str, task_type: str = "unknown",
+              cache_state: dict | None = None) -> RoutingDecision:
         score = random.random()
         return self._make_decision(score, task_type)
 
@@ -13,7 +14,8 @@ class RandomRouter(BaseRouter):
 class AlwaysWeakRouter(BaseRouter):
     """Always routes to the weak model. Throughput upper bound."""
 
-    def route(self, prompt: str, task_type: str = "unknown") -> RoutingDecision:
+    def route(self, prompt: str, task_type: str = "unknown",
+              cache_state: dict | None = None) -> RoutingDecision:
         return RoutingDecision(
             tier="weak",
             url=self.weak_url,
@@ -26,7 +28,8 @@ class AlwaysWeakRouter(BaseRouter):
 class AlwaysStrongRouter(BaseRouter):
     """Always routes to the strong model. Quality upper bound."""
 
-    def route(self, prompt: str, task_type: str = "unknown") -> RoutingDecision:
+    def route(self, prompt: str, task_type: str = "unknown",
+              cache_state: dict | None = None) -> RoutingDecision:
         return RoutingDecision(
             tier="strong",
             url=self.strong_url,

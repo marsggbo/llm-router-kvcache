@@ -24,32 +24,44 @@ def load_requests(results_dir: Path, dataset: str, router: str) -> list[dict]:
 
 def analyze_prefix_overlap(requests: list[dict]) -> dict:
     """
-    Measure token-level prefix overlap between requests routed to the same model.
-    Uses first 64 tokens as a proxy for shared prefix.
+    Measure longest-common-prefix (LCP) ratio between requests routed to the same model.
+
+    LCP ratio = len(shared prefix tokens) / max(len(a), len(b)).
+    High LCP → requests share a long common prefix → KV cache reuse is viable.
+
+    Groups by task_type within each tier to capture within-task clustering.
     """
-    by_tier = defaultdict(list)
+    by_group = defaultdict(list)
     for r in requests:
-        by_tier[r["model_tier"]].append(r["prompt"])
+        key = f"{r['model_tier']}:{r['task_type']}"
+        by_group[key].append(r["prompt"])
 
     results = {}
-    for tier, prompts in by_tier.items():
+    for group, prompts in by_group.items():
         if len(prompts) < 2:
             continue
-        # Sample 200 random pairs
         rng = np.random.default_rng(42)
-        indices = rng.choice(len(prompts), size=(min(200, len(prompts) // 2), 2), replace=False)
+        n_pairs = min(200, len(prompts) * (len(prompts) - 1) // 2)
+        indices = rng.choice(len(prompts), size=(n_pairs, 2), replace=True)
         overlaps = []
         for i, j in indices:
+            if i == j:
+                continue
             a, b = prompts[i].split(), prompts[j].split()
-            # Longest common prefix length
-            lcp = sum(1 for x, y in zip(a, b) if x == y)
-            overlap = lcp / max(len(a), len(b), 1)
-            overlaps.append(overlap)
-        results[tier] = {
-            "mean_overlap": float(np.mean(overlaps)),
-            "p50_overlap": float(np.percentile(overlaps, 50)),
-            "p90_overlap": float(np.percentile(overlaps, 90)),
-        }
+            lcp = 0
+            for x, y in zip(a, b):   # stop at first mismatch — true LCP
+                if x == y:
+                    lcp += 1
+                else:
+                    break
+            overlaps.append(lcp / max(len(a), len(b), 1))
+        if overlaps:
+            results[group] = {
+                "n_prompts": len(prompts),
+                "mean_lcp_ratio": float(np.mean(overlaps)),
+                "p50_lcp_ratio": float(np.percentile(overlaps, 50)),
+                "p90_lcp_ratio": float(np.percentile(overlaps, 90)),
+            }
     return results
 
 

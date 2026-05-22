@@ -29,15 +29,20 @@ from benchmark.metrics import RequestMetrics, compute_summary
 
 async def send_request(
     session: aiohttp.ClientSession,
-    decision: RoutingDecision,
+    router,                   # BaseRouter — routing happens here, not pre-computed
     req: Request,
     req_id: int,
     max_new_tokens: int,
     semaphore: asyncio.Semaphore,
+    cache_manager=None,       # Phase 3: optional cache state provider
 ) -> RequestMetrics:
+    # Route at dispatch time so Phase 3 can pass live cache state to the router.
+    cache_state = await cache_manager.get_state() if cache_manager else None
+    decision = router.route(req.prompt, req.task_type, cache_state=cache_state)
+
     metrics = RequestMetrics(
         request_id=req_id,
-        prompt=req.prompt[:200],    # truncate for storage
+        prompt=req.prompt,          # full prompt — required for LCP analysis
         task_type=req.task_type,
         model_tier=decision.tier,
         model_name=decision.model_name,
@@ -127,10 +132,10 @@ async def run_benchmark_async(cfg: dict, dataset_name: str, router_type: str,
     t_wall_start = time.perf_counter()
 
     async with aiohttp.ClientSession() as session:
-        tasks = []
-        for i, req in enumerate(requests):
-            decision = router.route(req.prompt, req.task_type)
-            tasks.append(send_request(session, decision, req, i, max_new_tokens, semaphore))
+        tasks = [
+            send_request(session, router, req, i, max_new_tokens, semaphore)
+            for i, req in enumerate(requests)
+        ]
 
         for coro in asyncio.as_completed(tasks):
             result = await coro

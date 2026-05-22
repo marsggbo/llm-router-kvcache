@@ -24,8 +24,14 @@ class BaseRouter(ABC):
         self.strong_model = cfg["models"]["strong"]
 
     @abstractmethod
-    def route(self, prompt: str, task_type: str = "unknown") -> RoutingDecision:
-        """Return routing decision for the given prompt."""
+    def route(self, prompt: str, task_type: str = "unknown",
+              cache_state: dict | None = None) -> RoutingDecision:
+        """
+        Return routing decision for the given prompt.
+
+        cache_state: live KV cache state per instance, injected by CacheManager
+                     in Phase 3. None in Phase 1/2 (stateless routing).
+        """
         ...
 
     def _make_decision(self, score: float, task_type: str = "unknown") -> RoutingDecision:

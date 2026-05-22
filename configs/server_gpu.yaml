@@ -1,0 +1,39 @@
+# GPU server config (SGLang backend)
+# Runs two separate SGLang instances, one per model tier.
+#
+# Setup:
+#   bash scripts/start_sglang.sh
+#   python -m benchmark.run_benchmark --config configs/server_gpu.yaml --dataset mmlu
+
+models:
+  weak: "Qwen/Qwen2.5-7B-Instruct"
+  strong: "Qwen/Qwen2.5-14B-Instruct"
+
+serving:
+  backend: "sglang"
+  weak_url: "http://localhost:30000"
+  strong_url: "http://localhost:30001"
+
+router:
+  type: "routellm"
+  routellm_model: "bert_gpt4"
+  threshold: 0.5
+  device: "auto"                         # auto-detects cuda
+
+benchmark:
+  num_requests: 500
+  concurrency: 16
+  max_new_tokens: 256
+  request_timeout: 120
+
+datasets:
+  mmlu:
+    num_shots: 5
+    subjects: null                        # all 57 subjects
+    split: "test"
+  sharegpt:
+    path: "data/sharegpt.json"
+    max_turns: 1
+  wildbench:
+    split: "test"
+    max_samples: 500

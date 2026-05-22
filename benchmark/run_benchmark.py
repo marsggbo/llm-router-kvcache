@@ -85,13 +85,15 @@ async def send_request(
                     if delta.get("content"):
                         completion_tokens += 1
 
-                    # SGLang embeds usage in the final chunk
                     if usage := chunk.get("usage"):
                         metrics.prompt_tokens = usage.get("prompt_tokens", 0)
                         metrics.completion_tokens = usage.get("completion_tokens", completion_tokens)
-                        # SGLang-specific: cached prompt tokens
-                        metrics.cached_tokens = usage.get("prompt_tokens_details", {}).get(
-                            "cached_tokens", 0
+                        # SGLang reports cached tokens; Ollama does not (stays 0).
+                        # On Ollama, cache hit rate is not directly observable —
+                        # use TTFT improvement over time as a proxy instead.
+                        metrics.cached_tokens = (
+                            usage.get("prompt_tokens_details", {}).get("cached_tokens", 0)
+                            or usage.get("cached_tokens", 0)
                         )
 
             metrics.total_latency = time.perf_counter() - t_start
@@ -161,7 +163,13 @@ async def run_benchmark_async(cfg: dict, dataset_name: str, router_type: str,
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="configs/default.yaml")
+    import platform
+    default_cfg = (
+        "configs/mac_local.yaml"
+        if platform.system() == "Darwin"
+        else "configs/server_gpu.yaml"
+    )
+    parser.add_argument("--config", default=default_cfg)
     parser.add_argument("--dataset", choices=["mmlu", "sharegpt", "wildbench"], required=True)
     parser.add_argument("--router", default="routellm",
                         help="Router type or 'all' to run all variants")

@@ -20,25 +20,35 @@ pip install -r requirements.txt
 
 ## Quick Start
 
-**1. Start serving backends** (requires GPU server):
+The config and backend are selected automatically by OS, or you can pass `--config` explicitly.
+
+### MacBook (Ollama, Apple Silicon)
+
 ```bash
-bash scripts/start_sglang.sh
+# Install Ollama and pull small Qwen models (~1.5 GB total)
+bash scripts/start_ollama.sh
+
+# Run benchmark — auto-uses configs/mac_local.yaml (Qwen2.5-0.5B + 1.5B)
+python -m benchmark.run_benchmark --dataset mmlu --router routellm
 ```
 
-**2. Run baseline benchmarks + pattern analysis:**
+> On Mac, `cached_tokens` is not reported by Ollama.
+> Use TTFT-over-time as a proxy for cache warm-up (see `analysis/collect_cache_stats.py`).
+
+### GPU Server (SGLang, CUDA)
+
 ```bash
+# Start two SGLang instances (weak on :30000, strong on :30001)
+bash scripts/start_sglang.sh
+
+# Full experiment: all router types + pattern analysis
 bash scripts/run_experiment.sh mmlu
 ```
 
 Or run steps individually:
 ```bash
-# Benchmark one router type
-python -m benchmark.run_benchmark --dataset mmlu --router routellm
-
-# Analyze patterns from results
+python -m benchmark.run_benchmark --config configs/server_gpu.yaml --dataset mmlu --router routellm
 python -m analysis.collect_cache_stats --dataset mmlu --router all
-
-# Plot
 python -m analysis.plot_patterns --dataset mmlu --router all
 ```
 

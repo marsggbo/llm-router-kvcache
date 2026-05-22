@@ -1,0 +1,44 @@
+# MacBook / local development config (Ollama backend)
+# Models are served by a single Ollama instance on port 11434.
+# Ollama routes by model name in each request — no separate server per model.
+#
+# Setup:
+#   brew install ollama
+#   bash scripts/start_ollama.sh
+#   python -m benchmark.run_benchmark --config configs/mac_local.yaml --dataset mmlu
+
+models:
+  weak: "qwen2.5:0.5b"
+  strong: "qwen2.5:1.5b"
+
+serving:
+  backend: "ollama"
+  weak_url: "http://localhost:11434"
+  strong_url: "http://localhost:11434"   # Ollama: same URL, different model name
+
+router:
+  type: "routellm"
+  routellm_model: "bert_gpt4"           # 0.3B BERT auto-runs on MPS on Apple Silicon
+  threshold: 0.5
+  device: "auto"                         # auto: mps → cuda → cpu
+
+benchmark:
+  num_requests: 100
+  concurrency: 4
+  max_new_tokens: 128
+  request_timeout: 120
+
+datasets:
+  mmlu:
+    num_shots: 3                          # fewer shots to keep prompts shorter on local
+    subjects: ["high_school_mathematics", "high_school_computer_science",
+               "moral_scenarios", "high_school_history"]
+    split: "test"
+    max_samples: 100
+  sharegpt:
+    path: "data/sharegpt.json"
+    max_turns: 1
+    max_samples: 100
+  wildbench:
+    split: "test"
+    max_samples: 100

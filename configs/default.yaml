@@ -1,0 +1,32 @@
+models:
+  weak: "Qwen/Qwen2.5-7B-Instruct"
+  strong: "Qwen/Qwen2.5-14B-Instruct"
+
+serving:
+  weak_url: "http://localhost:30000"
+  strong_url: "http://localhost:30001"
+
+router:
+  # Options: random | always_weak | always_strong | routellm | task_aware
+  type: "routellm"
+  routellm_model: "mf"          # RouteLLM backbone: mf | bert | causal_llm
+  threshold: 0.5                # Higher → more traffic to strong model
+  task_aware_affinity: false    # Enable task-aware instance affinity (Phase 3)
+
+benchmark:
+  num_requests: 500
+  concurrency: 16
+  max_new_tokens: 256
+  request_timeout: 120
+
+datasets:
+  mmlu:
+    num_shots: 5
+    subjects: null              # null = all 57 subjects
+    split: "test"
+  sharegpt:
+    path: "data/sharegpt.json"
+    max_turns: 1                # Use first turn only for single-round routing
+  wildbench:
+    split: "test"
+    max_samples: 500

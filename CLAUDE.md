@@ -94,14 +94,27 @@ scripts/
   run_experiment.sh       # Full pipeline: benchmark + analysis + plots
 ```
 
+## Experiment Results (MMLU, 300 req, Qwen3-4B × 3, GPU server)
+
+| System | Cache Hit | Throughput | TTFT p50 |
+|---|---|---|---|
+| random (baseline) | 49.27% | 5.2 req/s / 737 tok/s | 2.84s |
+| task_aware Phase 1 | 79.38% | 4.8 req/s ↓ | 3.30s ↑ |
+| task_aware Phase 3 (load-balance) | **85.17%** | **5.1 req/s** | **3.10s** |
+
+WildBench showed only +2pp cache improvement (no shared prefix in prompts).
+MMLU shows +35.9pp because 5-shot prefix is fixed per subject.
+
 ## Current State
 
-- [x] Phase 1 baseline code complete and tested on MacBook (Ollama)
-- [x] TaskAwareRouter implemented and smoke-tested
-- [x] 3-instance SGLang config ready
-- [ ] Phase 1 server experiments (need GPU server)
-- [ ] Phase 2 pattern analysis (need real SGLang cached_tokens data)
-- [ ] Phase 3: freq-weighted eviction (next implementation task)
+- [x] Phase 1 baseline + pattern analysis code
+- [x] TaskAwareRouter (affinity + load-balance-aware dispatch)
+- [x] CacheManager (polls /get_load for real-time queue state)
+- [x] Server experiments run, core results obtained
+- [ ] Add task-specific system prompts to WildBench (fix prefix sharing)
+- [ ] Phase 2 full pattern analysis
+- [ ] Phase 3: freq-weighted eviction (Algorithm 2)
+- [ ] Results visualization and comparison plots
 
 ## Next Steps on Server
 

@@ -173,8 +173,34 @@ WILDBENCH_TASK_MAP = {
     "others": "other",
 }
 
+# Task-specific system prompts injected as shared prefix.
+# All requests of the same task type share this prefix verbatim →
+# the KV cache for this prefix is computed once and reused for every
+# subsequent request of the same type on the same instance.
+# This simulates real-world deployments (customer service, coding assistant,
+# math tutor) where a fixed system prompt is prepended to every request.
+WILDBENCH_SYSTEM_PROMPTS = {
+    "wildbench_coding":       "You are an expert software engineer with deep knowledge of algorithms, data structures, and best practices across multiple programming languages. Help the user with their coding task clearly and concisely.",
+    "wildbench_math":         "You are a mathematics tutor with expertise in algebra, calculus, statistics, and mathematical reasoning. Solve problems step by step, showing your work clearly.",
+    "wildbench_reasoning":    "You are a logical reasoning and planning expert. Analyze problems systematically, consider multiple perspectives, and provide well-structured solutions.",
+    "wildbench_information":  "You are a knowledgeable assistant with broad expertise across science, history, culture, and current events. Provide accurate, well-organized information.",
+    "wildbench_creative":     "You are a creative writing and ideation expert. Help with storytelling, brainstorming, editing, and all forms of creative expression with imagination and style.",
+    "wildbench_advice":       "You are a thoughtful advisor who provides balanced, practical guidance on personal, professional, and life decisions.",
+    "wildbench_data_analysis":"You are a data analysis expert skilled in statistics, visualization, and extracting insights from complex datasets.",
+    "wildbench_other":        "You are a helpful, harmless, and honest AI assistant. Answer questions accurately and helpfully.",
+}
 
-def load_wildbench(split: str = "test", max_samples: int = None) -> list[Request]:
+
+def load_wildbench(split: str = "test", max_samples: int = None,
+                   use_system_prompt: bool = True) -> list[Request]:
+    """
+    Load WildBench v2 requests.
+
+    use_system_prompt: if True, prepend a task-specific system prompt to each
+      request. This creates a shared prefix within each task type, enabling
+      KV cache reuse across same-type requests — simulating real deployment
+      scenarios where a system prompt is always present.
+    """
     try:
         from datasets import load_dataset
     except ImportError:
@@ -188,15 +214,28 @@ def load_wildbench(split: str = "test", max_samples: int = None) -> list[Request
         conversation = item.get("conversation_input") or item.get("conversation", [])
         if not conversation:
             continue
-        prompt = conversation[0].get("content", "")
-        if not prompt:
+        user_content = conversation[0].get("content", "")
+        if not user_content:
             continue
         raw_tag = (item.get("primary_tag") or "others").lower()
         task_type = "wildbench_" + WILDBENCH_TASK_MAP.get(raw_tag, "other")
+
+        if use_system_prompt:
+            system_prompt = WILDBENCH_SYSTEM_PROMPTS.get(task_type,
+                            WILDBENCH_SYSTEM_PROMPTS["wildbench_other"])
+            # Format: system prompt as a role-separated prefix
+            prompt = f"System: {system_prompt}\n\nUser: {user_content}"
+        else:
+            prompt = user_content
+
         requests.append(Request(
             prompt=prompt,
             task_type=task_type,
-            metadata={"session_id": item.get("session_id", ""), "tag": raw_tag},
+            metadata={
+                "session_id": item.get("session_id", ""),
+                "tag": raw_tag,
+                "has_system_prompt": use_system_prompt,
+            },
         ))
 
     if max_samples:
@@ -229,6 +268,7 @@ def load_dataset_by_name(name: str, cfg: dict) -> list[Request]:
         return load_wildbench(
             split=dcfg.get("split", "test"),
             max_samples=dcfg.get("max_samples"),
+            use_system_prompt=dcfg.get("use_system_prompt", True),
         )
     elif name == "routellm_gpt4":
         return load_routellm_battles(

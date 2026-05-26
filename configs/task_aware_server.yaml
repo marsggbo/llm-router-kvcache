@@ -43,6 +43,7 @@ datasets:
   wildbench:
     split: "test"
     max_samples: 500
+    use_system_prompt: true   # inject task-specific system prompt as shared prefix
   mmlu:
     num_shots: 5
     subjects: null

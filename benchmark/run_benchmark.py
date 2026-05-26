@@ -55,8 +55,8 @@ async def send_request(
         "messages": [{"role": "user", "content": req.prompt}],
         "max_tokens": max_new_tokens,
         "stream": True,
-        # Request usage stats in final streaming chunk (supported by Ollama + SGLang)
-        "stream_options": {"include_usage": True},
+        # Disable Qwen3 thinking mode to avoid reasoning overhead in benchmark
+        "chat_template_kwargs": {"enable_thinking": False},
     }
 
     async with semaphore:
@@ -82,6 +82,8 @@ async def send_request(
                     try:
                         chunk = json.loads(data)
                     except json.JSONDecodeError:
+                        continue
+                    if not isinstance(chunk, dict):
                         continue
 
                     if chunk.get("choices"):
@@ -131,6 +133,23 @@ async def run_benchmark_async(cfg: dict, dataset_name: str, router_type: str,
     results: list[RequestMetrics] = []
     t_wall_start = time.perf_counter()
 
+    # Poll SGLang server info for global cache hit rate (usage per-request not available in 0.5.x)
+    server_urls = list({inst.url for inst in router.instances})
+
+    async def get_global_cache_hit_rate(session: aiohttp.ClientSession) -> float:
+        rates = []
+        for url in server_urls:
+            try:
+                async with session.get(f"{url}/get_server_info", timeout=aiohttp.ClientTimeout(total=3)) as r:
+                    if r.status == 200:
+                        info = await r.json()
+                        rate = info.get("cache_hit_rate", info.get("radix_cache_hit_rate", 0))
+                        if rate is not None:
+                            rates.append(float(rate))
+            except Exception:
+                pass
+        return sum(rates) / len(rates) if rates else 0.0
+
     async with aiohttp.ClientSession() as session:
         tasks = [
             send_request(session, router, req, i, max_new_tokens, semaphore)
@@ -143,9 +162,8 @@ async def run_benchmark_async(cfg: dict, dataset_name: str, router_type: str,
             if len(results) % 50 == 0:
                 done = len(results)
                 errors = sum(1 for r in results if r.error)
-                hit_rates = [r.cache_hit_rate for r in results if r.error is None]
-                avg_hit = sum(hit_rates) / len(hit_rates) if hit_rates else 0
-                print(f"  [{done}/{len(requests)}] errors={errors} avg_cache_hit={avg_hit:.2%}")
+                global_hit = await get_global_cache_hit_rate(session)
+                print(f"  [{done}/{len(requests)}] errors={errors} server_cache_hit={global_hit:.2%}")
 
     total_time = time.perf_counter() - t_wall_start
     summary = compute_summary(results, router_type, dataset_name, total_time)

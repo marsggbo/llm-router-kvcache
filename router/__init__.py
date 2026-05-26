@@ -1,12 +1,14 @@
 from .base import BaseRouter
 from .routellm_router import RouteLLMRouter
 from .simple_routers import RandomRouter, AlwaysWeakRouter, AlwaysStrongRouter
+from .task_aware_router import TaskAwareRouter
 
 ROUTER_REGISTRY = {
     "random": RandomRouter,
     "always_weak": AlwaysWeakRouter,
     "always_strong": AlwaysStrongRouter,
     "routellm": RouteLLMRouter,
+    "task_aware": TaskAwareRouter,
 }
 
 

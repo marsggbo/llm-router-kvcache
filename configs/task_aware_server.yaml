@@ -1,0 +1,46 @@
+# Task-aware routing config: 3 instances of the same model, each dedicated to a task type.
+# All instances run Qwen2.5-7B-Instruct — quality is identical, the only variable is
+# cache management strategy (random dispatch vs task-aware affinity).
+#
+# Setup:
+#   bash scripts/start_sglang_3inst.sh
+#   python -m benchmark.run_benchmark --config configs/task_aware_server.yaml \
+#          --dataset wildbench --router random      # baseline
+#   python -m benchmark.run_benchmark --config configs/task_aware_server.yaml \
+#          --dataset wildbench --router task_aware  # ours
+
+instances:
+  - name: "coding"
+    model: "Qwen/Qwen2.5-7B-Instruct"
+    url: "http://localhost:30000"
+    task_types: ["coding", "wildbench_coding"]
+
+  - name: "math"
+    model: "Qwen/Qwen2.5-7B-Instruct"
+    url: "http://localhost:30001"
+    task_types: ["math", "wildbench_math", "mmlu_stem"]
+
+  - name: "general"
+    model: "Qwen/Qwen2.5-7B-Instruct"
+    url: "http://localhost:30002"
+    task_types: []   # fallback — handles reasoning, creative, information, etc.
+
+router:
+  type: "task_aware"
+  task_aware_affinity: true
+
+benchmark:
+  num_requests: 500
+  concurrency: 16
+  max_new_tokens: 256
+  request_timeout: 120
+
+datasets:
+  wildbench:
+    split: "test"
+    max_samples: 500
+  mmlu:
+    num_shots: 5
+    subjects: null
+    split: "test"
+    max_samples: 300

@@ -10,7 +10,7 @@ class RequestMetrics:
     request_id: int
     prompt: str          # full prompt text — needed for prefix overlap analysis
     task_type: str
-    model_tier: str      # weak | strong
+    model_tier: str      # instance name: weak | strong | coding | math | general
     model_name: str
     router_score: float
 

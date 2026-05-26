@@ -44,7 +44,7 @@ async def send_request(
         request_id=req_id,
         prompt=req.prompt,          # full prompt — required for LCP analysis
         task_type=req.task_type,
-        model_tier=decision.tier,
+        model_tier=decision.instance_name,
         model_name=decision.model_name,
         router_score=decision.score,
         send_time=time.time(),

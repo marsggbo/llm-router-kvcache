@@ -3,12 +3,18 @@ from .base import BaseRouter, RoutingDecision
 
 
 class RandomRouter(BaseRouter):
-    """Routes each request randomly to weak or strong model."""
+    """Routes each request to a random instance (baseline, no cache awareness)."""
 
     def route(self, prompt: str, task_type: str = "unknown",
               cache_state: dict | None = None) -> RoutingDecision:
-        score = random.random()
-        return self._make_decision(score, task_type)
+        inst = random.choice(self.instances)
+        return RoutingDecision(
+            instance_name=inst.name,
+            url=inst.url,
+            model_name=inst.model_name,
+            score=0.5,
+            task_type=task_type,
+        )
 
 
 class AlwaysWeakRouter(BaseRouter):

@@ -22,8 +22,6 @@ for i in 0 1 2; do
         --model-path "$MODEL" \
         --port "$PORT" \
         --host 0.0.0.0 \
-        --enable-prefix-caching \
-        --log-requests \
         &
 done
 

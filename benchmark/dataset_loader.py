@@ -171,7 +171,7 @@ def load_wildbench(split: str = "test", max_samples: int = None) -> list[Request
     except ImportError:
         raise ImportError("Run: pip install datasets")
 
-    ds = load_dataset("allenai/WildBench", split=split)
+    ds = load_dataset("allenai/WildBench", "v2", split=split)
     requests = []
 
     for item in ds:

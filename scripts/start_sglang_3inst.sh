@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Start 3 SGLang instances of the same model on consecutive ports (30000-30002).
 # Each instance is dedicated to one task type for task-aware routing experiments.
-set -euo pipefail
+set -eu
 
 MODEL=${MODEL:-"Qwen/Qwen3-4B"}
 BASE_PORT=${BASE_PORT:-30000}
-GPUS=(${GPUS:-"1 2 3"})   # space-separated GPU IDs
 
+# Define GPUs and names as explicit arrays (compatible with non-interactive bash)
+GPU0=${GPU0:-1}
+GPU1=${GPU1:-2}
+GPU2=${GPU2:-3}
+GPUS=($GPU0 $GPU1 $GPU2)
 NAMES=("coding" "math" "general")
 
 for i in 0 1 2; do

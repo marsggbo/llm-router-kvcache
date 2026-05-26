@@ -11,17 +11,17 @@
 
 instances:
   - name: "coding"
-    model: "Qwen/Qwen2.5-7B-Instruct"
+    model: "Qwen/Qwen3-4B"
     url: "http://localhost:30000"
     task_types: ["coding", "wildbench_coding"]
 
   - name: "math"
-    model: "Qwen/Qwen2.5-7B-Instruct"
+    model: "Qwen/Qwen3-4B"
     url: "http://localhost:30001"
     task_types: ["math", "wildbench_math", "mmlu_stem"]
 
   - name: "general"
-    model: "Qwen/Qwen2.5-7B-Instruct"
+    model: "Qwen/Qwen3-4B"
     url: "http://localhost:30002"
     task_types: []   # fallback — handles reasoning, creative, information, etc.
 

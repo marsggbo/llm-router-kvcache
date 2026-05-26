@@ -3,9 +3,9 @@
 # Each instance is dedicated to one task type for task-aware routing experiments.
 set -euo pipefail
 
-MODEL=${MODEL:-"Qwen/Qwen2.5-7B-Instruct"}
+MODEL=${MODEL:-"Qwen/Qwen3-4B"}
 BASE_PORT=${BASE_PORT:-30000}
-GPUS=(${GPUS:-"0 1 2"})   # space-separated GPU IDs
+GPUS=(${GPUS:-"1 2 3"})   # space-separated GPU IDs
 
 NAMES=("coding" "math" "general")
 

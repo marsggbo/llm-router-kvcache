@@ -63,15 +63,21 @@ class TaskAwareRouter(BaseRouter):
 
         # Phase 3: load-balance-aware affinity.
         # All instances run the same model so any can serve any task.
-        # Use all instances for load balance, not just task-type-compatible ones.
         all_instances = self.instances
         preferred_load = _queue_length(cache_state, preferred.name)
         least_loaded = min(all_instances, key=lambda i: _queue_length(cache_state, i.name))
         least_load = _queue_length(cache_state, least_loaded.name)
 
-        # Fall back to least-loaded only when preferred is significantly more loaded.
-        # This preserves cache locality under moderate imbalance.
-        if preferred_load - least_load > self._load_threshold:
+        # Use relative ratio threshold to handle SGLang's token-based load metric.
+        # Fall back when preferred is more than (1 + threshold/10)x the least-loaded.
+        # E.g. threshold=8 → fall back when preferred load > 1.8x least-loaded load.
+        # Avoids sensitivity to absolute token counts.
+        if least_load > 0:
+            ratio = preferred_load / least_load
+            if ratio > 1 + self._load_threshold / 10:
+                return least_loaded
+        elif preferred_load > self._load_threshold * 1000:
+            # least_load == 0 but preferred has significant backlog
             return least_loaded
         return preferred
 

@@ -1,16 +1,21 @@
 """
 Task-Aware Router — routes requests to dedicated instances by task type.
 
-Phase 1 (baseline):
-  Fixed affinity: same task_type always goes to the same instance.
-  Creates natural prefix clustering → higher KV cache hit rate.
+Routing modes (selected by what's passed to route()):
 
-Phase 3 (optimization):
-  When cache_state is provided, selects the instance with highest
-  prefix cache affinity among compatible instances.
+  Phase 1 — Fixed affinity (cache_state=None):
+    Same task_type always hashes to the same instance.
+    Creates prefix clustering → high KV cache hit rate.
+    Problem: can cause load imbalance if task distribution is skewed.
 
-This router uses dataset labels as routing keys (oracle routing),
-isolating the cache management contribution from router quality.
+  Phase 3 — Load-balance-aware affinity (cache_state provided):
+    Prefers the affinity instance for cache locality.
+    Falls back to the least-loaded instance when the preferred one is
+    significantly more loaded (load_balance_threshold config).
+    Goal: high cache hit rate WITHOUT sacrificing throughput.
+
+    This is the paper's core contribution: jointly optimizing
+    cache affinity and load balance in the multi-task routing setting.
 """
 
 import hashlib
@@ -21,40 +26,24 @@ from .base import BaseRouter, Instance, RoutingDecision
 
 class TaskAwareRouter(BaseRouter):
     """
-    Routes by task_type label (from dataset metadata, no ML model needed).
+    Routes by task_type label from dataset metadata (oracle routing).
 
-    Config example:
-      instances:
-        - name: coding
-          url: http://localhost:30000
-          model: Qwen/Qwen2.5-7B-Instruct
-          task_types: [coding]
-        - name: math
-          url: http://localhost:30001
-          model: Qwen/Qwen2.5-7B-Instruct
-          task_types: [math]
-        - name: general
-          url: http://localhost:30002
-          model: Qwen/Qwen2.5-7B-Instruct
-          task_types: []   # handles everything else
+    Config:
+      router:
+        type: task_aware
+        load_balance_threshold: 8   # queue gap before falling back to load-aware
     """
 
     def __init__(self, cfg: dict):
         super().__init__(cfg)
-        # Track request counts per (task_type, instance) for freq-weighted eviction
+        self._load_threshold = cfg["router"].get("load_balance_threshold", 8)
         self._routing_freq: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     def route(self, prompt: str, task_type: str = "unknown",
               cache_state: dict | None = None) -> RoutingDecision:
         candidates = self.compatible_instances(task_type)
-
-        if cache_state:
-            inst = self._cache_affinity_select(prompt, candidates, cache_state)
-        else:
-            inst = self._affinity_select(task_type, candidates)
-
+        inst = self._select(task_type, candidates, cache_state)
         self._routing_freq[task_type][inst.name] += 1
-
         return RoutingDecision(
             instance_name=inst.name,
             url=inst.url,
@@ -63,38 +52,38 @@ class TaskAwareRouter(BaseRouter):
             task_type=task_type,
         )
 
-    def _affinity_select(self, task_type: str, candidates: list[Instance]) -> Instance:
-        """
-        Phase 1: deterministic affinity — hash task_type to a fixed instance.
-        Same task_type always lands on the same instance → prefix clustering.
-        """
+    def _select(self, task_type: str, candidates: list[Instance],
+                cache_state: dict | None) -> Instance:
+        # Deterministic affinity target (consistent hash on task_type)
         idx = int(hashlib.md5(task_type.encode()).hexdigest(), 16) % len(candidates)
-        return candidates[idx]
+        preferred = candidates[idx]
 
-    def _cache_affinity_select(self, prompt: str, candidates: list[Instance],
-                                cache_state: dict) -> Instance:
-        """
-        Phase 3: pick the instance with highest estimated prefix overlap.
-        cache_state = {instance_name: {"prefix_index": RadixIndex, ...}}
-        Falls back to fixed affinity if cache state is unavailable.
-        """
-        best_inst, best_score = candidates[0], -1.0
-        prompt_tokens = prompt.split()
+        if cache_state is None:
+            return preferred  # Phase 1: pure affinity, no load awareness
 
-        for inst in candidates:
-            state = cache_state.get(inst.name, {})
-            prefix_index = state.get("prefix_index")
-            if prefix_index is None:
-                continue
-            hit_tokens = prefix_index.longest_prefix_length(prompt_tokens)
-            score = hit_tokens / max(len(prompt_tokens), 1)
-            if score > best_score:
-                best_score, best_inst = score, inst
+        # Phase 3: load-balance-aware affinity.
+        # All instances run the same model so any can serve any task.
+        # Use all instances for load balance, not just task-type-compatible ones.
+        all_instances = self.instances
+        preferred_load = _queue_length(cache_state, preferred.name)
+        least_loaded = min(all_instances, key=lambda i: _queue_length(cache_state, i.name))
+        least_load = _queue_length(cache_state, least_loaded.name)
 
-        if best_score < 0:
-            return self._affinity_select(prompt, candidates)
-        return best_inst
+        # Fall back to least-loaded only when preferred is significantly more loaded.
+        # This preserves cache locality under moderate imbalance.
+        if preferred_load - least_load > self._load_threshold:
+            return least_loaded
+        return preferred
 
     def routing_frequencies(self) -> dict[str, dict[str, int]]:
-        """Expose routing frequency stats to the cache eviction layer."""
+        """Expose per-(task_type, instance) routing counts for eviction layer."""
         return dict(self._routing_freq)
+
+
+def _queue_length(cache_state: dict, instance_name: str) -> int:
+    state = cache_state.get(instance_name)
+    if state is None:
+        return 0
+    if hasattr(state, "queue_length"):     # InstanceState dataclass
+        return state.queue_length
+    return int(state.get("queue_length", 0))  # plain dict fallback

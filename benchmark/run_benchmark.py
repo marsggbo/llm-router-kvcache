@@ -25,6 +25,7 @@ from router import build_router
 from router.base import RoutingDecision
 from benchmark.dataset_loader import load_dataset_by_name, Request
 from benchmark.metrics import RequestMetrics, compute_summary
+from kvcache.cache_manager import CacheManager
 
 
 async def send_request(
@@ -36,8 +37,8 @@ async def send_request(
     semaphore: asyncio.Semaphore,
     cache_manager=None,       # Phase 3: optional cache state provider
 ) -> RequestMetrics:
-    # Route at dispatch time so Phase 3 can pass live cache state to the router.
-    cache_state = await cache_manager.get_state() if cache_manager else None
+    # Route at dispatch time with live cache state (Phase 3).
+    cache_state = cache_manager.get_state() if cache_manager else None
     decision = router.route(req.prompt, req.task_type, cache_state=cache_state)
 
     metrics = RequestMetrics(
@@ -129,19 +130,32 @@ async def run_benchmark_async(cfg: dict, dataset_name: str, router_type: str,
         return sum(rates) / len(rates) if rates else 0.0
 
     async with aiohttp.ClientSession() as session:
-        tasks = [
-            send_request(session, router, req, i, max_new_tokens, semaphore)
-            for i, req in enumerate(requests)
-        ]
+        # Start CacheManager for load-balance-aware routing (task_aware router uses this).
+        # Other routers (random, always_*) ignore cache_state entirely.
+        cache_manager = CacheManager(router.instances, poll_interval=1.0)
+        await cache_manager.start(session)
 
-        for coro in asyncio.as_completed(tasks):
-            result = await coro
-            results.append(result)
-            if len(results) % 50 == 0:
-                done = len(results)
-                errors = sum(1 for r in results if r.error)
-                global_hit = await get_global_cache_hit_rate(session)
-                print(f"  [{done}/{len(requests)}] errors={errors} server_cache_hit={global_hit:.2%}")
+        try:
+            tasks = [
+                send_request(session, router, req, i, max_new_tokens, semaphore,
+                             cache_manager=cache_manager)
+                for i, req in enumerate(requests)
+            ]
+
+            for coro in asyncio.as_completed(tasks):
+                result = await coro
+                results.append(result)
+                if len(results) % 50 == 0:
+                    done = len(results)
+                    errors = sum(1 for r in results if r.error)
+                    global_hit = await get_global_cache_hit_rate(session)
+                    # Also show per-instance queue length
+                    state = cache_manager.get_state()
+                    loads = " ".join(f"{n}:{s.queue_length}" for n, s in state.items())
+                    print(f"  [{done}/{len(requests)}] errors={errors} "
+                          f"cache_hit={global_hit:.2%} loads=[{loads}]")
+        finally:
+            await cache_manager.stop()
 
     total_time = time.perf_counter() - t_wall_start
     summary = compute_summary(results, router_type, dataset_name, total_time)

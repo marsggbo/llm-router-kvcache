@@ -27,7 +27,11 @@ instances:
 
 router:
   type: "task_aware"
-  task_aware_affinity: true
+  # Phase 3: fall back to least-loaded instance when preferred is
+  # more than this many requests ahead of the least-loaded one.
+  # Lower = more load balancing, less cache affinity.
+  # Higher = more cache affinity, less load balancing.
+  load_balance_threshold: 8
 
 benchmark:
   num_requests: 500

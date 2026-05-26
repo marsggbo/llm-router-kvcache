@@ -50,19 +50,20 @@ async def send_request(
         send_time=time.time(),
     )
 
+    # Use non-streaming to get accurate token counts including cached_tokens.
+    # SGLang 0.5.x streaming does not populate usage; non-streaming does.
+    # total_latency serves as a proxy for end-to-end latency.
     payload = {
         "model": decision.model_name,
         "messages": [{"role": "user", "content": req.prompt}],
         "max_tokens": max_new_tokens,
-        "stream": True,
-        # Disable Qwen3 thinking mode to avoid reasoning overhead in benchmark
+        "stream": False,
         "chat_template_kwargs": {"enable_thinking": False},
     }
 
     async with semaphore:
         try:
             t_start = time.perf_counter()
-            first_token_time = None
 
             async with session.post(
                 f"{decision.url}/v1/chat/completions",
@@ -70,42 +71,19 @@ async def send_request(
                 timeout=aiohttp.ClientTimeout(total=120),
             ) as resp:
                 resp.raise_for_status()
-                completion_tokens = 0
-
-                async for line in resp.content:
-                    line = line.decode().strip()
-                    if not line.startswith("data:"):
-                        continue
-                    data = line[len("data:"):].strip()
-                    if data == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    if not isinstance(chunk, dict):
-                        continue
-
-                    if chunk.get("choices"):
-                        if first_token_time is None:
-                            first_token_time = time.perf_counter()
-                            metrics.ttft = first_token_time - t_start
-                        delta = chunk["choices"][0].get("delta", {})
-                        if delta.get("content"):
-                            completion_tokens += 1
-
-                    if usage := chunk.get("usage"):
-                        metrics.prompt_tokens = usage.get("prompt_tokens", 0)
-                        metrics.completion_tokens = usage.get("completion_tokens", completion_tokens)
-                        # SGLang reports cached tokens; Ollama does not (stays 0).
-                        # On Ollama, cache hit rate is not directly observable —
-                        # use TTFT improvement over time as a proxy instead.
-                        metrics.cached_tokens = (
-                            usage.get("prompt_tokens_details", {}).get("cached_tokens", 0)
-                            or usage.get("cached_tokens", 0)
-                        )
+                result = await resp.json()
 
             metrics.total_latency = time.perf_counter() - t_start
+            # Non-streaming: no per-token timing, use total_latency as TTFT proxy
+            metrics.ttft = metrics.total_latency
+
+            usage = result.get("usage", {}) or {}
+            metrics.prompt_tokens = usage.get("prompt_tokens", 0)
+            metrics.completion_tokens = usage.get("completion_tokens", 0)
+            metrics.cached_tokens = (
+                (usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
+                or usage.get("cached_tokens", 0)
+            )
 
         except Exception as e:
             metrics.error = str(e)

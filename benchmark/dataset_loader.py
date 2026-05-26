@@ -154,13 +154,22 @@ def load_sharegpt(path: str, max_turns: int = 1, max_samples: int = None) -> lis
 # ---------------------------------------------------------------------------
 
 WILDBENCH_TASK_MAP = {
+    # v2 primary_tag values (title-cased in dataset, matched lowercase)
     "coding & debugging": "coding",
     "math": "math",
+    "reasoning": "reasoning",
+    "planning": "reasoning",
+    "information seeking": "information",
+    "creative writing": "creative",
+    "editing": "creative",
+    "advice seeking": "advice",
+    "data analysis": "data_analysis",
+    "role playing": "creative",
+    "brainstorming": "reasoning",
+    # v1 legacy keys
     "reasoning & planning": "reasoning",
     "information/explanation seeking": "information",
     "creative tasks": "creative",
-    "advice seeking": "advice",
-    "data analysis": "data_analysis",
     "others": "other",
 }
 
@@ -175,10 +184,13 @@ def load_wildbench(split: str = "test", max_samples: int = None) -> list[Request
     requests = []
 
     for item in ds:
-        conversation = item.get("conversation", [])
+        # v2 uses "conversation_input"; v1 uses "conversation"
+        conversation = item.get("conversation_input") or item.get("conversation", [])
         if not conversation:
             continue
         prompt = conversation[0].get("content", "")
+        if not prompt:
+            continue
         raw_tag = (item.get("primary_tag") or "others").lower()
         task_type = "wildbench_" + WILDBENCH_TASK_MAP.get(raw_tag, "other")
         requests.append(Request(

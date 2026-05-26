@@ -33,3 +33,4 @@ for PORT in 30000 30001 30002; do
     echo "  Port $PORT ready."
 done
 echo "All 3 instances running."
+wait  # Keep tmux session alive so background SGLang processes are not killed

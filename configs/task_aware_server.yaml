@@ -1,36 +1,41 @@
 # Task-aware routing config: 3 instances of the same model, each dedicated to a task type.
-# All instances run Qwen2.5-7B-Instruct — quality is identical, the only variable is
+# All instances run Qwen3-4B — quality is identical, the only variable is
 # cache management strategy (random dispatch vs task-aware affinity).
 #
-# Setup:
-#   bash scripts/start_sglang_3inst.sh
-#   python -m benchmark.run_benchmark --config configs/task_aware_server.yaml \
-#          --dataset wildbench --router random      # baseline
-#   python -m benchmark.run_benchmark --config configs/task_aware_server.yaml \
-#          --dataset wildbench --router task_aware  # ours
+# Task distribution designed for ~equal load:
+#
+#   WildBench v2 (500 req sampled):
+#     coding:  wildbench_coding(~170) + wildbench_information(~182) ≈ 352
+#     math:    wildbench_math(~87)  + wildbench_reasoning(~273)    ≈ 360
+#     general: wildbench_creative(~258) + wildbench_advice(~21)
+#              + wildbench_data_analysis(~33)                       ≈ 312
+#
+#   MMLU (300 req sampled):
+#     coding:  mmlu_humanities(~65)
+#     math:    mmlu_stem(~95) + mmlu_social_sciences(~60)          ≈ 155
+#     general: mmlu_other(~65) + fallback                          ≈  80
 
 instances:
   - name: "coding"
     model: "Qwen/Qwen3-4B"
     url: "http://localhost:30000"
-    task_types: ["coding", "wildbench_coding"]
+    task_types: ["coding", "wildbench_coding",
+                 "wildbench_information",
+                 "mmlu_humanities"]
 
   - name: "math"
     model: "Qwen/Qwen3-4B"
     url: "http://localhost:30001"
-    task_types: ["math", "wildbench_math", "mmlu_stem"]
+    task_types: ["math", "wildbench_math", "wildbench_reasoning",
+                 "mmlu_stem", "mmlu_social_sciences"]
 
   - name: "general"
     model: "Qwen/Qwen3-4B"
     url: "http://localhost:30002"
-    task_types: []   # fallback — handles reasoning, creative, information, etc.
+    task_types: []   # handles creative, advice, data_analysis, other, mmlu_other
 
 router:
   type: "task_aware"
-  # Phase 3: fall back to least-loaded instance when preferred is
-  # more than this many requests ahead of the least-loaded one.
-  # Lower = more load balancing, less cache affinity.
-  # Higher = more cache affinity, less load balancing.
   load_balance_threshold: 8
 
 benchmark:
@@ -43,7 +48,7 @@ datasets:
   wildbench:
     split: "test"
     max_samples: 500
-    use_system_prompt: true   # inject task-specific system prompt as shared prefix
+    use_system_prompt: true
   mmlu:
     num_shots: 5
     subjects: null

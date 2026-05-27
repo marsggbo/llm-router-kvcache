@@ -110,10 +110,21 @@ async def run_benchmark_async(cfg: dict, dataset_name: str, router_type: str,
     print(f"{'='*60}")
 
     results: list[RequestMetrics] = []
-    t_wall_start = time.perf_counter()
 
-    # Poll SGLang server info for global cache hit rate (usage per-request not available in 0.5.x)
+    # Flush KV cache on all instances before each experiment to ensure
+    # a cold-cache start and fair comparison across router types.
     server_urls = list({inst.url for inst in router.instances})
+    print(f"  Flushing KV cache on {len(server_urls)} instance(s)...")
+    async with aiohttp.ClientSession() as _s:
+        for url in server_urls:
+            try:
+                async with _s.post(f"{url}/flush_cache",
+                                   timeout=aiohttp.ClientTimeout(total=10)) as r:
+                    print(f"    {url}/flush_cache → {r.status}")
+            except Exception as e:
+                print(f"    {url}/flush_cache failed: {e}")
+
+    t_wall_start = time.perf_counter()
 
     async def get_global_cache_hit_rate(session: aiohttp.ClientSession) -> float:
         rates = []

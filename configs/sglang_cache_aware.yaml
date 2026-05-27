@@ -1,0 +1,42 @@
+# SGLang built-in cache_aware router baseline.
+# All requests go to port 9000 (sglang_router), which uses its own
+# approximate radix-tree-based cache-aware dispatch to workers on
+# 30000/30001/30002. No task-type information is used.
+#
+# Launch router first:
+#   bash scripts/start_sglang_router.sh
+#
+# Then benchmark:
+#   python -m benchmark.run_benchmark \
+#     --config configs/sglang_cache_aware.yaml \
+#     --dataset mmlu --router random
+#
+# Note: router type "random" here means our code sends requests
+# without extra routing logic — all go to port 9000 and SGLang's
+# cache_aware policy handles dispatch internally.
+
+instances:
+  - name: "sglang_router"
+    model: "Qwen/Qwen3-4B"
+    url:   "http://localhost:9000"
+    task_types: []       # accepts all tasks
+
+router:
+  type: "random"         # our code does no routing; SGLang router does
+
+benchmark:
+  num_requests: 300
+  concurrency: 16
+  max_new_tokens: 256
+  request_timeout: 120
+
+datasets:
+  mmlu:
+    num_shots: 5
+    subjects: null
+    split: "test"
+    max_samples: 300
+  wildbench:
+    split: "test"
+    max_samples: 500
+    use_system_prompt: true
